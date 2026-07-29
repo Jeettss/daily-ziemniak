@@ -56,6 +56,18 @@ h3 {
   font-size: 1.1rem;
 }
 
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.menu-buttons button {
+  width: 100%;
+  max-width: 300px;
+}
+
 .login-form {
   display: flex;
   flex-direction: column;
@@ -81,6 +93,13 @@ input[type="text"]:focus {
   border-color: #e94560;
 }
 
+#join-code-input {
+  text-transform: uppercase;
+  letter-spacing: 8px;
+  font-size: 1.4rem;
+  font-weight: bold;
+}
+
 button {
   padding: 14px 32px;
   font-size: 1.2rem;
@@ -95,12 +114,25 @@ button:active {
   transform: scale(0.95);
 }
 
-#btn-join {
+#btn-create,
+#btn-join-menu {
   background: #e94560;
   color: white;
 }
 
-#btn-join:hover {
+#btn-create:hover,
+#btn-join-menu:hover {
+  background: #c73e54;
+}
+
+#btn-create-confirm,
+#btn-join-confirm {
+  background: #e94560;
+  color: white;
+}
+
+#btn-create-confirm:hover,
+#btn-join-confirm:hover {
   background: #c73e54;
 }
 
@@ -157,6 +189,14 @@ button:active {
 
 .hidden {
   display: none !important;
+}
+
+#session-code-display {
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: #4ecca3;
+  margin-bottom: 20px;
+  letter-spacing: 4px;
 }
 
 #player-list-container {
@@ -229,6 +269,14 @@ button:active {
   font-size: 2rem;
 }
 
+#version-footer {
+  position: fixed;
+  bottom: 10px;
+  right: 14px;
+  font-size: 0.75rem;
+  color: #555;
+}
+
 @media (max-width: 480px) {
   h1 {
     font-size: 1.6rem;
@@ -239,15 +287,7 @@ button:active {
   }
 
   #btn-throw {
-    font-size: 1.2rem;
-    padding: 16px 30px;
+    font-size: 1rem;
+    padding: 12px 22px;
   }
-}
-
-#version-footer {
-  position: fixed;
-  bottom: 10px;
-  right: 14px;
-  font-size: 0.75rem;
-  color: #555;
 }
