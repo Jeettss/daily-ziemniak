@@ -70,6 +70,7 @@
         isHost = response.isHost;
         showScreen('lobby');
         updateHostUI();
+        document.getElementById('version-footer').textContent = 'v' + response.version;
       } else {
         elements.loginError.textContent = response.error;
       }
@@ -128,6 +129,7 @@
   });
 
   function updateGameView(holderId, holderNick) {
+    if (throwTimeout) clearTimeout(throwTimeout);
     if (holderId === myId) {
       elements.gameHolderInfo.textContent = 'Masz laptopa 💻';
       elements.gameHolderInfo.classList.add('you-have-it');
@@ -141,9 +143,20 @@
   }
 
   // Rzuć laptopem
+  let throwTimeout = null;
   elements.btnThrow.addEventListener('click', () => {
     elements.btnThrow.disabled = true;
     socket.emit('throw-laptop');
+    // Fallback - odblokuj po 2s gdyby serwer nie odpowiedział
+    throwTimeout = setTimeout(() => {
+      elements.btnThrow.disabled = false;
+    }, 2000);
+  });
+
+  // Serwer odrzucił rzut (cooldown)
+  socket.on('throw-rejected', () => {
+    elements.btnThrow.disabled = false;
+    if (throwTimeout) clearTimeout(throwTimeout);
   });
 
   // Anuluj rundę (host)
@@ -165,16 +178,14 @@
     }
   });
 
-  // Gra anulowana
+  // Gra anulowana - wróć do lobby
   socket.on('game-cancelled', (msg) => {
-    showScreen('result');
-    elements.resultMessage.innerHTML = escapeHtml(msg);
-
-    if (isHost) {
-      elements.hostRestart.classList.remove('hidden');
-    } else {
-      elements.hostRestart.classList.add('hidden');
-    }
+    showScreen('lobby');
+    updateHostUI();
+    elements.lobbyError.textContent = msg;
+    setTimeout(() => {
+      elements.lobbyError.textContent = '';
+    }, 5000);
   });
 
   // Zostałeś hostem
