@@ -136,6 +136,18 @@ button:active {
   transform: none;
 }
 
+#btn-cancel {
+  background: #666;
+  color: white;
+  font-size: 1rem;
+  padding: 10px 24px;
+  margin-top: 30px;
+}
+
+#btn-cancel:hover {
+  background: #888;
+}
+
 .error {
   color: #ff6b6b;
   font-size: 0.9rem;
