@@ -135,11 +135,22 @@
       elements.gameHolderInfo.classList.add('you-have-it');
       elements.gameAction.classList.remove('hidden');
       elements.btnThrow.disabled = false;
+      randomizeThrowPosition();
     } else {
       elements.gameHolderInfo.textContent = holderNick + ' ma laptopa 💻';
       elements.gameHolderInfo.classList.remove('you-have-it');
       elements.gameAction.classList.add('hidden');
     }
+  }
+
+  function randomizeThrowPosition() {
+    const maxX = window.innerWidth - 200;
+    const maxY = window.innerHeight - 80;
+    const x = Math.max(10, Math.floor(Math.random() * maxX));
+    const y = Math.max(10, Math.floor(Math.random() * maxY));
+    elements.gameAction.style.position = 'fixed';
+    elements.gameAction.style.left = x + 'px';
+    elements.gameAction.style.top = y + 'px';
   }
 
   // Rzuć laptopem
