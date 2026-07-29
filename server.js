@@ -9,7 +9,7 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-const VERSION = '1.004';
+const VERSION = '1.005';
 
 // Stan gry
 const state = {
@@ -21,8 +21,8 @@ const state = {
 };
 
 const THROW_COOLDOWN_MS = 1000; // 1 sekunda cooldown na rzucanie
-const TIMER_MIN_SEC = 20;
-const TIMER_MAX_SEC = 120;
+const TIMER_MIN_SEC = 15;
+const TIMER_MAX_SEC = 45;
 
 function getPlayerList() {
   const list = [];
