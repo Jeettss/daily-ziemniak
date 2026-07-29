@@ -243,3 +243,11 @@ button:active {
     padding: 16px 30px;
   }
 }
+
+#version-footer {
+  position: fixed;
+  bottom: 10px;
+  right: 14px;
+  font-size: 0.75rem;
+  color: #555;
+}
