@@ -121,9 +121,9 @@ button:active {
 #btn-throw {
   background: #e94560;
   color: white;
-  font-size: 1.5rem;
-  padding: 20px 40px;
-  margin-top: 20px;
+  font-size: 1.05rem;
+  padding: 14px 28px;
+  margin-top: 0;
 }
 
 #btn-throw:hover {
