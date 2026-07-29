@@ -9,24 +9,51 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-const VERSION = '1.006';
+const VERSION = '1.007';
 
-// Stan gry
-const state = {
-  players: new Map(), // socketId -> { nick, isHost }
-  gameStarted: false,
-  currentHolder: null, // socketId gracza z laptopem
-  timer: null,
-  lastThrowTime: new Map(), // socketId -> timestamp (anti-spam)
-};
-
-const THROW_COOLDOWN_MS = 1000; // 1 sekunda cooldown na rzucanie
+const THROW_COOLDOWN_MS = 1000;
 const TIMER_MIN_SEC = 15;
 const TIMER_MAX_SEC = 45;
 
-function getPlayerList() {
+// Sesje: code -> session
+const sessions = new Map();
+
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // bez I i O (mylone z 1 i 0)
+  let code = '';
+  for (let i = 0; i < 4; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  // Sprawdź unikalność
+  if (sessions.has(code)) return generateCode();
+  return code;
+}
+
+function createSession(hostId, hostNick) {
+  const code = generateCode();
+  const session = {
+    code,
+    players: new Map(), // socketId -> { nick, isHost }
+    gameStarted: false,
+    currentHolder: null,
+    timer: null,
+    lastThrowTime: new Map(),
+  };
+  session.players.set(hostId, { nick: hostNick, isHost: true });
+  sessions.set(code, session);
+  return session;
+}
+
+function getSessionByPlayer(socketId) {
+  for (const [code, session] of sessions) {
+    if (session.players.has(socketId)) return session;
+  }
+  return null;
+}
+
+function getPlayerList(session) {
   const list = [];
-  for (const [id, player] of state.players) {
+  for (const [id, player] of session.players) {
     list.push({ id, nick: player.nick, isHost: player.isHost });
   }
   return list;
@@ -37,9 +64,9 @@ function getRandomTimer() {
   return seconds * 1000;
 }
 
-function getRandomPlayer(excludeId) {
+function getRandomPlayer(session, excludeId) {
   const candidates = [];
-  for (const [id] of state.players) {
+  for (const [id] of session.players) {
     if (id !== excludeId) {
       candidates.push(id);
     }
@@ -48,188 +75,201 @@ function getRandomPlayer(excludeId) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-function endRound(loserId) {
-  clearTimeout(state.timer);
-  state.timer = null;
-  state.gameStarted = false;
+function endRound(session) {
+  clearTimeout(session.timer);
+  session.timer = null;
+  session.gameStarted = false;
 
-  const loser = state.players.get(loserId);
+  const loser = session.players.get(session.currentHolder);
   const loserNick = loser ? loser.nick : 'Nieznany';
 
-  io.emit('round-end', { loserNick, loserId });
-  state.currentHolder = null;
+  io.to(session.code).emit('round-end', { loserNick, loserId: session.currentHolder });
+  session.currentHolder = null;
 }
 
-function startExplosionTimer(duration) {
-  state.timer = setTimeout(() => {
-    if (state.currentHolder && state.players.has(state.currentHolder)) {
-      console.log(`BOOM! Timer skończony. Przegrał: ${state.players.get(state.currentHolder).nick}`);
-      endRound(state.currentHolder);
+function startExplosionTimer(session, duration) {
+  session.timer = setTimeout(() => {
+    if (session.currentHolder && session.players.has(session.currentHolder)) {
+      console.log(`[${session.code}] BOOM! Przegrał: ${session.players.get(session.currentHolder).nick}`);
+      endRound(session);
     } else {
-      // Holder zniknął - wybierz losowego przegranego
-      console.log('Timer skończony ale holder nie istnieje. Losowy przegrany.');
-      const playerIds = Array.from(state.players.keys());
+      console.log(`[${session.code}] Timer skończony ale holder nie istnieje. Losowy przegrany.`);
+      const playerIds = Array.from(session.players.keys());
       if (playerIds.length > 0) {
-        const randomLoser = playerIds[Math.floor(Math.random() * playerIds.length)];
-        endRound(randomLoser);
+        session.currentHolder = playerIds[Math.floor(Math.random() * playerIds.length)];
+        endRound(session);
       } else {
-        state.gameStarted = false;
-        state.timer = null;
-        state.currentHolder = null;
+        session.gameStarted = false;
+        session.timer = null;
+        session.currentHolder = null;
       }
     }
   }, duration);
 }
 
+function cancelRound(session, message) {
+  clearTimeout(session.timer);
+  session.timer = null;
+  session.gameStarted = false;
+  session.currentHolder = null;
+  io.to(session.code).emit('game-cancelled', message);
+}
+
 io.on('connection', (socket) => {
   console.log(`Połączono: ${socket.id}`);
 
-  socket.on('join', (nick, callback) => {
-    // Walidacja nicku
-    if (!nick || typeof nick !== 'string') {
-      return callback({ success: false, error: 'Nick jest wymagany.' });
-    }
+  // Tworzenie sesji
+  socket.on('create-session', (nick, callback) => {
+    const validation = validateNick(nick);
+    if (!validation.valid) return callback({ success: false, error: validation.error });
 
     nick = nick.trim();
+    const session = createSession(socket.id, nick);
+    socket.join(session.code);
+    callback({ success: true, code: session.code, isHost: true, version: VERSION });
+    io.to(session.code).emit('player-list', getPlayerList(session));
+    console.log(`[${session.code}] Sesja utworzona przez: ${nick}`);
+  });
 
-    if (nick.length < 1 || nick.length > 20) {
-      return callback({ success: false, error: 'Nick musi mieć od 1 do 20 znaków.' });
+  // Dołączanie do sesji
+  socket.on('join-session', (data, callback) => {
+    if (!data || !data.nick || !data.code) {
+      return callback({ success: false, error: 'Nick i kod sesji są wymagane.' });
     }
 
-    if (!/^[a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ _\-]+$/.test(nick)) {
-      return callback({ success: false, error: 'Nick zawiera niedozwolone znaki.' });
+    const validation = validateNick(data.nick);
+    if (!validation.valid) return callback({ success: false, error: validation.error });
+
+    const nick = data.nick.trim();
+    const code = data.code.trim().toUpperCase();
+
+    const session = sessions.get(code);
+    if (!session) {
+      return callback({ success: false, error: 'Sesja nie istnieje.' });
     }
 
-    // Sprawdź duplikat nicku
-    for (const [id, player] of state.players) {
-      if (player.nick.toLowerCase() === nick.toLowerCase() && id !== socket.id) {
-        return callback({ success: false, error: 'Nick jest już zajęty.' });
-      }
-    }
-
-    // Nie można dołączyć w trakcie rundy
-    if (state.gameStarted) {
+    if (session.gameStarted) {
       return callback({ success: false, error: 'Runda trwa. Poczekaj na zakończenie.' });
     }
 
-    // Pierwszy gracz jest hostem
-    const isHost = state.players.size === 0;
+    // Sprawdź duplikat nicku w sesji
+    for (const [id, player] of session.players) {
+      if (player.nick.toLowerCase() === nick.toLowerCase() && id !== socket.id) {
+        return callback({ success: false, error: 'Nick jest już zajęty w tej sesji.' });
+      }
+    }
 
-    state.players.set(socket.id, { nick, isHost });
-    callback({ success: true, isHost, version: VERSION });
-
-    io.emit('player-list', getPlayerList());
-    console.log(`Dołączył: ${nick} (host: ${isHost})`);
+    session.players.set(socket.id, { nick, isHost: false });
+    socket.join(code);
+    callback({ success: true, code, isHost: false, version: VERSION });
+    io.to(code).emit('player-list', getPlayerList(session));
+    console.log(`[${code}] Dołączył: ${nick}`);
   });
 
   socket.on('start-game', () => {
-    const player = state.players.get(socket.id);
+    const session = getSessionByPlayer(socket.id);
+    if (!session) return;
+
+    const player = session.players.get(socket.id);
     if (!player || !player.isHost) return;
-    if (state.gameStarted) return;
-    if (state.players.size < 2) {
+    if (session.gameStarted) return;
+    if (session.players.size < 2) {
       socket.emit('error-msg', 'Potrzeba minimum 2 graczy.');
       return;
     }
 
-    state.gameStarted = true;
+    session.gameStarted = true;
 
-    // Losuj pierwszego posiadacza
-    const playerIds = Array.from(state.players.keys());
+    const playerIds = Array.from(session.players.keys());
     const firstHolder = playerIds[Math.floor(Math.random() * playerIds.length)];
-    state.currentHolder = firstHolder;
+    session.currentHolder = firstHolder;
 
-    // Losuj czas wybuchu
     const duration = getRandomTimer();
-    console.log(`Runda rozpoczęta. Timer: ${duration / 1000}s. Pierwszy: ${state.players.get(firstHolder).nick}`);
+    console.log(`[${session.code}] Runda rozpoczęta. Pierwszy: ${session.players.get(firstHolder).nick}`);
 
-    startExplosionTimer(duration);
+    startExplosionTimer(session, duration);
 
-    io.emit('game-started', {
+    io.to(session.code).emit('game-started', {
       holderId: firstHolder,
-      holderNick: state.players.get(firstHolder).nick,
+      holderNick: session.players.get(firstHolder).nick,
     });
   });
 
   socket.on('throw-laptop', () => {
-    if (!state.gameStarted) return;
-    if (state.currentHolder !== socket.id) return;
+    const session = getSessionByPlayer(socket.id);
+    if (!session) return;
+    if (!session.gameStarted) return;
+    if (session.currentHolder !== socket.id) return;
 
-    // Anti-spam
     const now = Date.now();
-    const lastThrow = state.lastThrowTime.get(socket.id) || 0;
+    const lastThrow = session.lastThrowTime.get(socket.id) || 0;
     if (now - lastThrow < THROW_COOLDOWN_MS) {
       socket.emit('throw-rejected');
       return;
     }
-    state.lastThrowTime.set(socket.id, now);
+    session.lastThrowTime.set(socket.id, now);
 
-    // Losuj nowego posiadacza
-    const newHolder = getRandomPlayer(socket.id);
-    if (!newHolder) return; // Brak innego gracza
+    const newHolder = getRandomPlayer(session, socket.id);
+    if (!newHolder) return;
 
-    state.currentHolder = newHolder;
+    session.currentHolder = newHolder;
 
-    const newHolderPlayer = state.players.get(newHolder);
-    console.log(`Rzut: ${state.players.get(socket.id).nick} -> ${newHolderPlayer.nick}`);
-    io.emit('laptop-thrown', {
+    const newHolderPlayer = session.players.get(newHolder);
+    console.log(`[${session.code}] Rzut: ${session.players.get(socket.id).nick} -> ${newHolderPlayer.nick}`);
+    io.to(session.code).emit('laptop-thrown', {
       fromId: socket.id,
-      fromNick: state.players.get(socket.id).nick,
+      fromNick: session.players.get(socket.id).nick,
       toId: newHolder,
       toNick: newHolderPlayer.nick,
     });
   });
 
   socket.on('cancel-round', () => {
-    const player = state.players.get(socket.id);
+    const session = getSessionByPlayer(socket.id);
+    if (!session) return;
+    const player = session.players.get(socket.id);
     if (!player || !player.isHost) return;
-    if (!state.gameStarted) return;
+    if (!session.gameStarted) return;
 
-    clearTimeout(state.timer);
-    state.timer = null;
-    state.gameStarted = false;
-    state.currentHolder = null;
-    io.emit('game-cancelled', 'Host anulował rundę.');
+    cancelRound(session, 'Host anulował rundę.');
   });
 
   socket.on('window-minimized', () => {
-    const player = state.players.get(socket.id);
+    const session = getSessionByPlayer(socket.id);
+    if (!session) return;
+    const player = session.players.get(socket.id);
     if (!player) return;
-    if (!state.gameStarted) return;
+    if (!session.gameStarted) return;
 
-    clearTimeout(state.timer);
-    state.timer = null;
-    state.gameStarted = false;
-    state.currentHolder = null;
-    io.emit('game-cancelled', `${player.nick} oszukuje i zmniejszył rozmiar okna`);
-  });
-
-  socket.on('zoom-changed', () => {
-    const player = state.players.get(socket.id);
-    if (!player) return;
-    if (!state.gameStarted) return;
-
-    clearTimeout(state.timer);
-    state.timer = null;
-    state.gameStarted = false;
-    state.currentHolder = null;
-    io.emit('game-cancelled', `${player.nick} oszukuje i zmienił zoom przeglądarki`);
+    cancelRound(session, `${player.nick} oszukuje i zmniejszył rozmiar okna`);
   });
 
   socket.on('disconnect', () => {
-    const player = state.players.get(socket.id);
+    const session = getSessionByPlayer(socket.id);
+    if (!session) return;
+
+    const player = session.players.get(socket.id);
     if (!player) return;
 
-    console.log(`Rozłączono: ${player.nick}`);
+    console.log(`[${session.code}] Rozłączono: ${player.nick}`);
 
     const wasHost = player.isHost;
-    const wasHolder = state.currentHolder === socket.id;
+    const wasHolder = session.currentHolder === socket.id;
 
-    state.players.delete(socket.id);
-    state.lastThrowTime.delete(socket.id);
+    session.players.delete(socket.id);
+    session.lastThrowTime.delete(socket.id);
+
+    // Jeśli nie ma graczy — usuń sesję
+    if (session.players.size === 0) {
+      clearTimeout(session.timer);
+      sessions.delete(session.code);
+      console.log(`[${session.code}] Sesja usunięta (brak graczy).`);
+      return;
+    }
 
     // Jeśli host się rozłączył, wyznacz nowego
-    if (wasHost && state.players.size > 0) {
-      const firstPlayer = state.players.entries().next().value;
+    if (wasHost) {
+      const firstPlayer = session.players.entries().next().value;
       if (firstPlayer) {
         firstPlayer[1].isHost = true;
         io.to(firstPlayer[0]).emit('you-are-host');
@@ -237,26 +277,32 @@ io.on('connection', (socket) => {
     }
 
     // Jeśli posiadacz laptopa się rozłączył w trakcie gry
-    if (wasHolder && state.gameStarted) {
-      clearTimeout(state.timer);
-      state.timer = null;
-      state.gameStarted = false;
-      state.currentHolder = null;
-      io.emit('game-cancelled', `Runda przerwana — ${player.nick} rozłączył się.`);
+    if (wasHolder && session.gameStarted) {
+      cancelRound(session, `Runda przerwana — ${player.nick} rozłączył się.`);
     }
 
-    // Jeśli ktokolwiek się rozłączył w trakcie gry (nie holder) i zostało za mało graczy
-    if (state.gameStarted && state.players.size < 2) {
-      clearTimeout(state.timer);
-      state.timer = null;
-      state.gameStarted = false;
-      state.currentHolder = null;
-      io.emit('game-cancelled', `Runda przerwana — za mało graczy.`);
+    // Za mało graczy
+    if (session.gameStarted && session.players.size < 2) {
+      cancelRound(session, 'Runda przerwana — za mało graczy.');
     }
 
-    io.emit('player-list', getPlayerList());
+    io.to(session.code).emit('player-list', getPlayerList(session));
   });
 });
+
+function validateNick(nick) {
+  if (!nick || typeof nick !== 'string') {
+    return { valid: false, error: 'Nick jest wymagany.' };
+  }
+  nick = nick.trim();
+  if (nick.length < 1 || nick.length > 20) {
+    return { valid: false, error: 'Nick musi mieć od 1 do 20 znaków.' };
+  }
+  if (!/^[a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ _\-]+$/.test(nick)) {
+    return { valid: false, error: 'Nick zawiera niedozwolone znaki.' };
+  }
+  return { valid: true };
+}
 
 // Znajdź adresy IP w sieci lokalnej
 function getLocalIPs() {
@@ -281,7 +327,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('   🥔 Daily Ziemniak Server 🥔');
   console.log('=================================');
   console.log('');
-  console.log(`Serwer działa na porcie ${PORT}`);
+  console.log(`Serwer działa na porcie ${PORT} (v${VERSION})`);
   console.log('');
   console.log('Adresy do połączenia w LAN:');
   ips.forEach((ip) => {
