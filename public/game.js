@@ -1,60 +1,189 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Daily Ziemniak 🥔</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div id="app">
-    <!-- Ekran logowania -->
-    <div id="screen-login" class="screen active">
-      <h1>🥔 Daily Ziemniak</h1>
-      <p class="subtitle">Kto bierze laptopa na daily?</p>
-      <div class="login-form">
-        <input type="text" id="nick-input" placeholder="Wpisz swój nick" maxlength="20" autocomplete="off">
-        <button id="btn-join">DOŁĄCZ</button>
-        <p id="login-error" class="error"></p>
-      </div>
-    </div>
+(function () {
+  'use strict';
 
-    <!-- Ekran lobby -->
-    <div id="screen-lobby" class="screen">
-      <h1>🥔 Daily Ziemniak</h1>
-      <h2>Lobby</h2>
-      <div id="player-list-container">
-        <h3>Gracze (<span id="player-count">0</span>):</h3>
-        <ul id="player-list"></ul>
-      </div>
-      <div id="host-controls" class="hidden">
-        <button id="btn-start">START</button>
-      </div>
-      <p id="lobby-info">Czekam na hosta...</p>
-      <p id="lobby-error" class="error"></p>
-    </div>
+  const socket = io();
 
-    <!-- Ekran gry -->
-    <div id="screen-game" class="screen">
-      <h1>🥔 Daily Ziemniak</h1>
-      <div id="game-status"></div>
-      <div id="game-holder-info"></div>
-      <div id="game-action" class="hidden">
-        <button id="btn-throw">RZUĆ LAPTOPEM 💻</button>
-      </div>
-    </div>
+  // Elementy DOM
+  const screens = {
+    login: document.getElementById('screen-login'),
+    lobby: document.getElementById('screen-lobby'),
+    game: document.getElementById('screen-game'),
+    result: document.getElementById('screen-result'),
+  };
 
-    <!-- Ekran wyniku -->
-    <div id="screen-result" class="screen">
-      <h1>🥔 Daily Ziemniak</h1>
-      <div id="result-message"></div>
-      <div id="host-restart" class="hidden">
-        <button id="btn-restart">NASTĘPNA RUNDA</button>
-      </div>
-    </div>
-  </div>
+  const elements = {
+    nickInput: document.getElementById('nick-input'),
+    btnJoin: document.getElementById('btn-join'),
+    loginError: document.getElementById('login-error'),
+    playerList: document.getElementById('player-list'),
+    playerCount: document.getElementById('player-count'),
+    hostControls: document.getElementById('host-controls'),
+    btnStart: document.getElementById('btn-start'),
+    lobbyInfo: document.getElementById('lobby-info'),
+    lobbyError: document.getElementById('lobby-error'),
+    gameStatus: document.getElementById('game-status'),
+    gameHolderInfo: document.getElementById('game-holder-info'),
+    gameAction: document.getElementById('game-action'),
+    btnThrow: document.getElementById('btn-throw'),
+    resultMessage: document.getElementById('result-message'),
+    hostRestart: document.getElementById('host-restart'),
+    btnRestart: document.getElementById('btn-restart'),
+  };
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="game.js"></script>
-</body>
-</html>
+  // Stan klienta
+  let myId = null;
+  let isHost = false;
+  let myNick = '';
+
+  // Nawigacja ekranów
+  function showScreen(name) {
+    Object.values(screens).forEach((s) => s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  // Dołączanie do gry
+  elements.btnJoin.addEventListener('click', joinGame);
+  elements.nickInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') joinGame();
+  });
+
+  function joinGame() {
+    const nick = elements.nickInput.value.trim();
+    elements.loginError.textContent = '';
+
+    if (!nick) {
+      elements.loginError.textContent = 'Wpisz nick.';
+      return;
+    }
+
+    if (nick.length > 20) {
+      elements.loginError.textContent = 'Nick może mieć maksymalnie 20 znaków.';
+      return;
+    }
+
+    socket.emit('join', nick, (response) => {
+      if (response.success) {
+        myNick = nick;
+        myId = socket.id;
+        isHost = response.isHost;
+        showScreen('lobby');
+        updateHostUI();
+      } else {
+        elements.loginError.textContent = response.error;
+      }
+    });
+  }
+
+  function updateHostUI() {
+    if (isHost) {
+      elements.hostControls.classList.remove('hidden');
+      elements.lobbyInfo.textContent = 'Jesteś hostem. Kliknij START gdy wszyscy będą gotowi.';
+    } else {
+      elements.hostControls.classList.add('hidden');
+      elements.lobbyInfo.textContent = 'Czekam na hosta...';
+    }
+  }
+
+  // Lista graczy
+  socket.on('player-list', (players) => {
+    elements.playerList.innerHTML = '';
+    elements.playerCount.textContent = players.length;
+
+    players.forEach((p) => {
+      const li = document.createElement('li');
+      li.textContent = p.nick;
+      if (p.isHost) li.classList.add('host');
+      if (p.id === myId) li.textContent += ' (Ty)';
+      elements.playerList.appendChild(li);
+    });
+  });
+
+  // Host START
+  elements.btnStart.addEventListener('click', () => {
+    socket.emit('start-game');
+  });
+
+  // Restart
+  elements.btnRestart.addEventListener('click', () => {
+    socket.emit('start-game');
+  });
+
+  // Gra rozpoczęta
+  socket.on('game-started', (data) => {
+    showScreen('game');
+    elements.gameStatus.textContent = 'Runda trwa! Laptop krąży...';
+    updateGameView(data.holderId, data.holderNick);
+  });
+
+  // Laptop rzucony
+  socket.on('laptop-thrown', (data) => {
+    updateGameView(data.toId, data.toNick);
+  });
+
+  function updateGameView(holderId, holderNick) {
+    if (holderId === myId) {
+      elements.gameHolderInfo.textContent = 'Masz laptopa 💻';
+      elements.gameHolderInfo.classList.add('you-have-it');
+      elements.gameAction.classList.remove('hidden');
+      elements.btnThrow.disabled = false;
+    } else {
+      elements.gameHolderInfo.textContent = holderNick + ' ma laptopa 💻';
+      elements.gameHolderInfo.classList.remove('you-have-it');
+      elements.gameAction.classList.add('hidden');
+    }
+  }
+
+  // Rzuć laptopem
+  elements.btnThrow.addEventListener('click', () => {
+    elements.btnThrow.disabled = true;
+    socket.emit('throw-laptop');
+    // Przycisk zostanie odblokowany gdy laptop wróci (updateGameView)
+  });
+
+  // Koniec rundy
+  socket.on('round-end', (data) => {
+    showScreen('result');
+    elements.resultMessage.innerHTML =
+      '<span class="loser-name">' + escapeHtml(data.loserNick) + '</span><br><br>' +
+      'bierze laptopa na daily 💻';
+
+    if (isHost) {
+      elements.hostRestart.classList.remove('hidden');
+    } else {
+      elements.hostRestart.classList.add('hidden');
+    }
+  });
+
+  // Gra anulowana
+  socket.on('game-cancelled', (msg) => {
+    showScreen('result');
+    elements.resultMessage.innerHTML = escapeHtml(msg);
+
+    if (isHost) {
+      elements.hostRestart.classList.remove('hidden');
+    } else {
+      elements.hostRestart.classList.add('hidden');
+    }
+  });
+
+  // Zostałeś hostem
+  socket.on('you-are-host', () => {
+    isHost = true;
+    updateHostUI();
+  });
+
+  // Błąd
+  socket.on('error-msg', (msg) => {
+    elements.lobbyError.textContent = msg;
+    setTimeout(() => {
+      elements.lobbyError.textContent = '';
+    }, 3000);
+  });
+
+  // Helpers
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+})();
