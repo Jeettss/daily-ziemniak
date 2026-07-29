@@ -103,16 +103,51 @@
 
   // Host START
   elements.btnStart.addEventListener('click', () => {
+    elements.lobbyError.textContent = '';
     socket.emit('start-game');
   });
 
   // Restart
   elements.btnRestart.addEventListener('click', () => {
+    elements.lobbyError.textContent = '';
     socket.emit('start-game');
   });
 
+  // Sprawdzanie rozmiaru okna i zooma
+  function isWindowMaximized() {
+    return window.innerWidth >= screen.availWidth * 0.9 && window.innerHeight >= screen.availHeight * 0.85;
+  }
+
+  function isZoomNormal() {
+    const zoom = Math.round(window.devicePixelRatio * 100);
+    return zoom >= 90 && zoom <= 110;
+  }
+
+  let windowCheckInterval = null;
+
+  function startWindowCheck() {
+    windowCheckInterval = setInterval(() => {
+      if (!isWindowMaximized()) {
+        socket.emit('window-minimized');
+      } else if (!isZoomNormal()) {
+        socket.emit('zoom-changed');
+      }
+    }, 1000);
+  }
+
+  function stopWindowCheck() {
+    if (windowCheckInterval) {
+      clearInterval(windowCheckInterval);
+      windowCheckInterval = null;
+    }
+  }
+
   // Gra rozpoczęta
   socket.on('game-started', (data) => {
+    if (!isWindowMaximized()) {
+      socket.emit('window-minimized');
+      return;
+    }
     showScreen('game');
     elements.gameStatus.textContent = 'Runda trwa! Laptop krąży...';
     updateGameView(data.holderId, data.holderNick);
@@ -121,6 +156,7 @@
     } else {
       elements.hostCancel.classList.add('hidden');
     }
+    startWindowCheck();
   });
 
   // Laptop rzucony
@@ -177,6 +213,7 @@
 
   // Koniec rundy
   socket.on('round-end', (data) => {
+    stopWindowCheck();
     showScreen('result');
     elements.resultMessage.innerHTML =
       '<span class="loser-name">' + escapeHtml(data.loserNick) + '</span><br><br>' +
@@ -191,12 +228,10 @@
 
   // Gra anulowana - wróć do lobby
   socket.on('game-cancelled', (msg) => {
+    stopWindowCheck();
     showScreen('lobby');
     updateHostUI();
     elements.lobbyError.textContent = msg;
-    setTimeout(() => {
-      elements.lobbyError.textContent = '';
-    }, 5000);
   });
 
   // Zostałeś hostem
