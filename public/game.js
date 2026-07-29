@@ -5,16 +5,25 @@
 
   // Elementy DOM
   const screens = {
-    login: document.getElementById('screen-login'),
+    menu: document.getElementById('screen-menu'),
+    create: document.getElementById('screen-create'),
+    join: document.getElementById('screen-join'),
     lobby: document.getElementById('screen-lobby'),
     game: document.getElementById('screen-game'),
     result: document.getElementById('screen-result'),
   };
 
   const elements = {
-    nickInput: document.getElementById('nick-input'),
-    btnJoin: document.getElementById('btn-join'),
-    loginError: document.getElementById('login-error'),
+    btnCreate: document.getElementById('btn-create'),
+    btnJoinMenu: document.getElementById('btn-join-menu'),
+    createNickInput: document.getElementById('create-nick-input'),
+    btnCreateConfirm: document.getElementById('btn-create-confirm'),
+    createError: document.getElementById('create-error'),
+    joinCodeInput: document.getElementById('join-code-input'),
+    joinNickInput: document.getElementById('join-nick-input'),
+    btnJoinConfirm: document.getElementById('btn-join-confirm'),
+    joinError: document.getElementById('join-error'),
+    sessionCodeDisplay: document.getElementById('session-code-display'),
     playerList: document.getElementById('player-list'),
     playerCount: document.getElementById('player-count'),
     hostControls: document.getElementById('host-controls'),
@@ -36,6 +45,7 @@
   let myId = null;
   let isHost = false;
   let myNick = '';
+  let sessionCode = '';
 
   // Nawigacja ekranów
   function showScreen(name) {
@@ -43,38 +53,80 @@
     screens[name].classList.add('active');
   }
 
-  // Dołączanie do gry
-  elements.btnJoin.addEventListener('click', joinGame);
-  elements.nickInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') joinGame();
+  // Menu główne
+  elements.btnCreate.addEventListener('click', () => showScreen('create'));
+  elements.btnJoinMenu.addEventListener('click', () => showScreen('join'));
+
+  // Tworzenie sesji
+  elements.btnCreateConfirm.addEventListener('click', createSession);
+  elements.createNickInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') createSession();
   });
 
-  function joinGame() {
-    const nick = elements.nickInput.value.trim();
-    elements.loginError.textContent = '';
+  function createSession() {
+    const nick = elements.createNickInput.value.trim();
+    elements.createError.textContent = '';
 
     if (!nick) {
-      elements.loginError.textContent = 'Wpisz nick.';
+      elements.createError.textContent = 'Wpisz nick.';
       return;
     }
 
-    if (nick.length > 20) {
-      elements.loginError.textContent = 'Nick może mieć maksymalnie 20 znaków.';
-      return;
-    }
-
-    socket.emit('join', nick, (response) => {
+    socket.emit('create-session', nick, (response) => {
       if (response.success) {
         myNick = nick;
         myId = socket.id;
-        isHost = response.isHost;
-        showScreen('lobby');
-        updateHostUI();
+        isHost = true;
+        sessionCode = response.code;
         document.getElementById('version-footer').textContent = 'v' + response.version;
+        enterLobby();
       } else {
-        elements.loginError.textContent = response.error;
+        elements.createError.textContent = response.error;
       }
     });
+  }
+
+  // Dołączanie do sesji
+  elements.btnJoinConfirm.addEventListener('click', joinSession);
+  elements.joinNickInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') joinSession();
+  });
+  elements.joinCodeInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') joinSession();
+  });
+
+  function joinSession() {
+    const code = elements.joinCodeInput.value.trim().toUpperCase();
+    const nick = elements.joinNickInput.value.trim();
+    elements.joinError.textContent = '';
+
+    if (!code) {
+      elements.joinError.textContent = 'Wpisz kod sesji.';
+      return;
+    }
+    if (!nick) {
+      elements.joinError.textContent = 'Wpisz nick.';
+      return;
+    }
+
+    socket.emit('join-session', { code, nick }, (response) => {
+      if (response.success) {
+        myNick = nick;
+        myId = socket.id;
+        isHost = false;
+        sessionCode = response.code;
+        document.getElementById('version-footer').textContent = 'v' + response.version;
+        enterLobby();
+      } else {
+        elements.joinError.textContent = response.error;
+      }
+    });
+  }
+
+  function enterLobby() {
+    showScreen('lobby');
+    elements.sessionCodeDisplay.textContent = 'Kod sesji: ' + sessionCode;
+    updateHostUI();
   }
 
   function updateHostUI() {
@@ -113,14 +165,9 @@
     socket.emit('start-game');
   });
 
-  // Sprawdzanie rozmiaru okna i zooma
+  // Sprawdzanie rozmiaru okna
   function isWindowMaximized() {
     return window.innerWidth >= screen.availWidth * 0.9 && window.innerHeight >= screen.availHeight * 0.85;
-  }
-
-  function isZoomNormal() {
-    const zoom = Math.round(window.devicePixelRatio * 100);
-    return zoom >= 90 && zoom <= 110;
   }
 
   let windowCheckInterval = null;
@@ -129,8 +176,6 @@
     windowCheckInterval = setInterval(() => {
       if (!isWindowMaximized()) {
         socket.emit('window-minimized');
-      } else if (!isZoomNormal()) {
-        socket.emit('zoom-changed');
       }
     }, 1000);
   }
@@ -194,7 +239,6 @@
   elements.btnThrow.addEventListener('click', () => {
     elements.btnThrow.disabled = true;
     socket.emit('throw-laptop');
-    // Fallback - odblokuj po 2s gdyby serwer nie odpowiedział
     throwTimeout = setTimeout(() => {
       elements.btnThrow.disabled = false;
     }, 2000);
