@@ -8,14 +8,36 @@
 </head>
 <body>
   <div id="app">
-    <!-- Ekran logowania -->
-    <div id="screen-login" class="screen active">
+    <!-- Ekran główny -->
+    <div id="screen-menu" class="screen active">
       <h1>🥔 Daily Ziemniak</h1>
       <p class="subtitle">Kto bierze laptopa na daily?</p>
+      <div class="menu-buttons">
+        <button id="btn-create">STWÓRZ SESJĘ</button>
+        <button id="btn-join-menu">DOŁĄCZ DO SESJI</button>
+      </div>
+    </div>
+
+    <!-- Ekran tworzenia sesji -->
+    <div id="screen-create" class="screen">
+      <h1>🥔 Daily Ziemniak</h1>
+      <p class="subtitle">Stwórz sesję</p>
       <div class="login-form">
-        <input type="text" id="nick-input" placeholder="Wpisz swój nick" maxlength="20" autocomplete="off">
-        <button id="btn-join">DOŁĄCZ</button>
-        <p id="login-error" class="error"></p>
+        <input type="text" id="create-nick-input" placeholder="Wpisz swój nick" maxlength="20" autocomplete="off">
+        <button id="btn-create-confirm">STWÓRZ</button>
+        <p id="create-error" class="error"></p>
+      </div>
+    </div>
+
+    <!-- Ekran dołączania -->
+    <div id="screen-join" class="screen">
+      <h1>🥔 Daily Ziemniak</h1>
+      <p class="subtitle">Dołącz do sesji</p>
+      <div class="login-form">
+        <input type="text" id="join-code-input" placeholder="Kod sesji (4 litery)" maxlength="4" autocomplete="off">
+        <input type="text" id="join-nick-input" placeholder="Wpisz swój nick" maxlength="20" autocomplete="off">
+        <button id="btn-join-confirm">DOŁĄCZ</button>
+        <p id="join-error" class="error"></p>
       </div>
     </div>
 
@@ -23,6 +45,7 @@
     <div id="screen-lobby" class="screen">
       <h1>🥔 Daily Ziemniak</h1>
       <h2>Lobby</h2>
+      <div id="session-code-display"></div>
       <div id="player-list-container">
         <h3>Gracze (<span id="player-count">0</span>):</h3>
         <ul id="player-list"></ul>
