@@ -25,6 +25,8 @@
     gameHolderInfo: document.getElementById('game-holder-info'),
     gameAction: document.getElementById('game-action'),
     btnThrow: document.getElementById('btn-throw'),
+    hostCancel: document.getElementById('host-cancel'),
+    btnCancel: document.getElementById('btn-cancel'),
     resultMessage: document.getElementById('result-message'),
     hostRestart: document.getElementById('host-restart'),
     btnRestart: document.getElementById('btn-restart'),
@@ -113,6 +115,11 @@
     showScreen('game');
     elements.gameStatus.textContent = 'Runda trwa! Laptop krąży...';
     updateGameView(data.holderId, data.holderNick);
+    if (isHost) {
+      elements.hostCancel.classList.remove('hidden');
+    } else {
+      elements.hostCancel.classList.add('hidden');
+    }
   });
 
   // Laptop rzucony
@@ -137,7 +144,11 @@
   elements.btnThrow.addEventListener('click', () => {
     elements.btnThrow.disabled = true;
     socket.emit('throw-laptop');
-    // Przycisk zostanie odblokowany gdy laptop wróci (updateGameView)
+  });
+
+  // Anuluj rundę (host)
+  elements.btnCancel.addEventListener('click', () => {
+    socket.emit('cancel-round');
   });
 
   // Koniec rundy
