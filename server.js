@@ -9,6 +9,8 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
+const VERSION = '1.004';
+
 // Stan gry
 const state = {
   players: new Map(), // socketId -> { nick, isHost }
@@ -61,7 +63,20 @@ function endRound(loserId) {
 function startExplosionTimer(duration) {
   state.timer = setTimeout(() => {
     if (state.currentHolder && state.players.has(state.currentHolder)) {
+      console.log(`BOOM! Timer skończony. Przegrał: ${state.players.get(state.currentHolder).nick}`);
       endRound(state.currentHolder);
+    } else {
+      // Holder zniknął - wybierz losowego przegranego
+      console.log('Timer skończony ale holder nie istnieje. Losowy przegrany.');
+      const playerIds = Array.from(state.players.keys());
+      if (playerIds.length > 0) {
+        const randomLoser = playerIds[Math.floor(Math.random() * playerIds.length)];
+        endRound(randomLoser);
+      } else {
+        state.gameStarted = false;
+        state.timer = null;
+        state.currentHolder = null;
+      }
     }
   }, duration);
 }
@@ -92,11 +107,16 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Nie można dołączyć w trakcie rundy
+    if (state.gameStarted) {
+      return callback({ success: false, error: 'Runda trwa. Poczekaj na zakończenie.' });
+    }
+
     // Pierwszy gracz jest hostem
     const isHost = state.players.size === 0;
 
     state.players.set(socket.id, { nick, isHost });
-    callback({ success: true, isHost });
+    callback({ success: true, isHost, version: VERSION });
 
     io.emit('player-list', getPlayerList());
     console.log(`Dołączył: ${nick} (host: ${isHost})`);
@@ -137,7 +157,10 @@ io.on('connection', (socket) => {
     // Anti-spam
     const now = Date.now();
     const lastThrow = state.lastThrowTime.get(socket.id) || 0;
-    if (now - lastThrow < THROW_COOLDOWN_MS) return;
+    if (now - lastThrow < THROW_COOLDOWN_MS) {
+      socket.emit('throw-rejected');
+      return;
+    }
     state.lastThrowTime.set(socket.id, now);
 
     // Losuj nowego posiadacza
@@ -147,6 +170,7 @@ io.on('connection', (socket) => {
     state.currentHolder = newHolder;
 
     const newHolderPlayer = state.players.get(newHolder);
+    console.log(`Rzut: ${state.players.get(socket.id).nick} -> ${newHolderPlayer.nick}`);
     io.emit('laptop-thrown', {
       fromId: socket.id,
       fromNick: state.players.get(socket.id).nick,
@@ -190,35 +214,20 @@ io.on('connection', (socket) => {
 
     // Jeśli posiadacz laptopa się rozłączył w trakcie gry
     if (wasHolder && state.gameStarted) {
-      if (state.players.size < 2) {
-        // Za mało graczy - zakończ rundę
-        clearTimeout(state.timer);
-        state.timer = null;
-        state.gameStarted = false;
-        state.currentHolder = null;
-        io.emit('game-cancelled', 'Za mało graczy. Runda anulowana.');
-      } else {
-        // Przekaż laptopa losowej osobie
-        const newHolder = getRandomPlayer(null); // null bo gracza już nie ma
-        if (newHolder) {
-          state.currentHolder = newHolder;
-          io.emit('laptop-thrown', {
-            fromId: socket.id,
-            fromNick: player.nick + ' (rozłączony)',
-            toId: newHolder,
-            toNick: state.players.get(newHolder).nick,
-          });
-        }
-      }
+      clearTimeout(state.timer);
+      state.timer = null;
+      state.gameStarted = false;
+      state.currentHolder = null;
+      io.emit('game-cancelled', `Runda przerwana — ${player.nick} rozłączył się.`);
     }
 
-    // Jeśli za mało graczy zostało i gra trwa
+    // Jeśli ktokolwiek się rozłączył w trakcie gry (nie holder) i zostało za mało graczy
     if (state.gameStarted && state.players.size < 2) {
       clearTimeout(state.timer);
       state.timer = null;
       state.gameStarted = false;
       state.currentHolder = null;
-      io.emit('game-cancelled', 'Za mało graczy. Runda anulowana.');
+      io.emit('game-cancelled', `Runda przerwana — za mało graczy.`);
     }
 
     io.emit('player-list', getPlayerList());
