@@ -9,7 +9,7 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-const VERSION = '1.005';
+const VERSION = '1.006';
 
 // Stan gry
 const state = {
@@ -189,6 +189,30 @@ io.on('connection', (socket) => {
     state.gameStarted = false;
     state.currentHolder = null;
     io.emit('game-cancelled', 'Host anulował rundę.');
+  });
+
+  socket.on('window-minimized', () => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+    if (!state.gameStarted) return;
+
+    clearTimeout(state.timer);
+    state.timer = null;
+    state.gameStarted = false;
+    state.currentHolder = null;
+    io.emit('game-cancelled', `${player.nick} oszukuje i zmniejszył rozmiar okna`);
+  });
+
+  socket.on('zoom-changed', () => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+    if (!state.gameStarted) return;
+
+    clearTimeout(state.timer);
+    state.timer = null;
+    state.gameStarted = false;
+    state.currentHolder = null;
+    io.emit('game-cancelled', `${player.nick} oszukuje i zmienił zoom przeglądarki`);
   });
 
   socket.on('disconnect', () => {
