@@ -155,6 +155,18 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('cancel-round', () => {
+    const player = state.players.get(socket.id);
+    if (!player || !player.isHost) return;
+    if (!state.gameStarted) return;
+
+    clearTimeout(state.timer);
+    state.timer = null;
+    state.gameStarted = false;
+    state.currentHolder = null;
+    io.emit('game-cancelled', 'Host anulował rundę.');
+  });
+
   socket.on('disconnect', () => {
     const player = state.players.get(socket.id);
     if (!player) return;
