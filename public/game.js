@@ -165,16 +165,22 @@
     socket.emit('start-game');
   });
 
-  // Sprawdzanie rozmiaru okna
-  function isWindowMaximized() {
-    return window.innerWidth >= screen.availWidth * 0.9 && window.innerHeight >= screen.availHeight * 0.85;
+  // Sprawdzanie rozmiaru okna - zapamiętaj na starcie i wykrywaj zmniejszenie
+  let startWidth = null;
+  let startHeight = null;
+
+  function isWindowShrunk() {
+    if (startWidth === null) return false;
+    return window.innerWidth < startWidth || window.innerHeight < startHeight;
   }
 
   let windowCheckInterval = null;
 
   function startWindowCheck() {
+    startWidth = window.innerWidth;
+    startHeight = window.innerHeight;
     windowCheckInterval = setInterval(() => {
-      if (!isWindowMaximized()) {
+      if (isWindowShrunk()) {
         socket.emit('window-minimized');
       }
     }, 1000);
@@ -189,7 +195,8 @@
 
   // Gra rozpoczęta
   socket.on('game-started', (data) => {
-    if (!isWindowMaximized()) {
+    // Wymuś minimalny rozmiar okna na starcie (80% ekranu)
+    if (window.innerWidth < screen.availWidth * 0.8 || window.innerHeight < screen.availHeight * 0.75) {
       socket.emit('window-minimized');
       return;
     }
