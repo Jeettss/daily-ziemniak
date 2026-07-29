@@ -1,6 +1,6 @@
 {
   "name": "daily-ziemniak",
-  "version": "1.0.0",
+  "version": "1.004",
   "description": "Daily Ziemniak - imprezowa gra hot potato do losowania kto bierze laptopa na daily",
   "main": "server.js",
   "scripts": {
