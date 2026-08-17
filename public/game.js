@@ -34,8 +34,7 @@
     gameHolderInfo: document.getElementById('game-holder-info'),
     gameAction: document.getElementById('game-action'),
     btnThrow: document.getElementById('btn-throw'),
-    hostCancel: document.getElementById('host-cancel'),
-    btnCancel: document.getElementById('btn-cancel'),
+    hostCancelHint: document.getElementById('host-cancel-hint'),
     resultMessage: document.getElementById('result-message'),
     hostRestart: document.getElementById('host-restart'),
     btnRestart: document.getElementById('btn-restart'),
@@ -204,9 +203,9 @@
     elements.gameStatus.textContent = 'Runda trwa! Laptop krąży...';
     updateGameView(data.holderId, data.holderNick);
     if (isHost) {
-      elements.hostCancel.classList.remove('hidden');
+      elements.hostCancelHint.classList.remove('hidden');
     } else {
-      elements.hostCancel.classList.add('hidden');
+      elements.hostCancelHint.classList.add('hidden');
     }
     startWindowCheck();
   });
@@ -257,9 +256,11 @@
     if (throwTimeout) clearTimeout(throwTimeout);
   });
 
-  // Anuluj rundę (host)
-  elements.btnCancel.addEventListener('click', () => {
-    socket.emit('cancel-round');
+  // Anuluj rundę (host) - klawisz Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isHost) {
+      socket.emit('cancel-round');
+    }
   });
 
   // Koniec rundy
